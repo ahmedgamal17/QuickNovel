@@ -268,7 +268,8 @@ class ResultFragment : Fragment() {
                 val res = loadResponse.value
 
                 // LOAD IMAGES FIRST TO GIVE IT A BIT OF TIME
-                if (res.posterUrl != null) {
+                // GlideUrl() crashes on null or empty!
+                if (!res.posterUrl.isNullOrEmpty()) {
                     val glideUrl =
                         GlideUrl(res.posterUrl, LazyHeaders.Builder().addHeader("Referer", api.mainUrl).build())
                     requireContext().let {
