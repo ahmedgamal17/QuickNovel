@@ -24,6 +24,7 @@ import com.lagradost.quicknovel.util.Apis
 import com.lagradost.quicknovel.util.Coroutines.main
 import com.lagradost.quicknovel.util.ResultCached
 import com.lagradost.quicknovel.util.UIHelper.popupMenu
+import com.lagradost.quicknovel.util.UIHelper.setImage
 import com.lagradost.quicknovel.util.toPx
 import com.lagradost.quicknovel.widget.AutofitRecyclerView
 import kotlinx.android.synthetic.main.history_result_compact.view.*
@@ -94,13 +95,7 @@ class HistoryAdapter(
             cardText.text = card.name
             imageTextMore.text = "${card.totalChapters} Chapters"
 
-            val glideUrl =
-                GlideUrl(card.poster)
-            localActivity.let {
-                Glide.with(it)
-                    .load(glideUrl)
-                    .into(cardView)
-            }
+            cardView.setImage(card.poster)
 
             fun handleSource() {
                 (localActivity as AppCompatActivity).loadResult(card.source, card.apiName)
@@ -121,7 +116,7 @@ class HistoryAdapter(
                         }
 
                         val uri = withContext(Dispatchers.IO) {
-                            localActivity?.createQuickStream(
+                            localActivity.createQuickStream(
                                 BookDownloader.QuickStreamData(
                                     BookDownloader.QuickStreamMetaData(
                                         res.author,
@@ -129,13 +124,13 @@ class HistoryAdapter(
                                         card.apiName,
                                     ),
                                     res.posterUrl,
-                                    res.data
+                                    res.data.toMutableList()
                                 )
                             )
                         }
-                        localActivity?.openQuickStream(uri)
+                        localActivity.openQuickStream(uri)
                     } else {
-                        localActivity?.let { ctx ->
+                        localActivity.let { ctx ->
                             Toast.makeText(ctx, "Error Loading Novel", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -169,10 +164,10 @@ class HistoryAdapter(
                     handleSource()
                 }
             } else {
-                backgroundCard?.setOnClickListener {
+                backgroundCard.setOnClickListener {
                     handleRead()
                 }
-                backgroundCard?.setOnLongClickListener {
+                backgroundCard.setOnLongClickListener {
                     val items = listOf(
                         Triple(0, R.drawable.ic_baseline_menu_book_24, R.string.download_read_action),
                         Triple(1, R.drawable.ic_baseline_open_in_new_24, R.string.download_open_action),

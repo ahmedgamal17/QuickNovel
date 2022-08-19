@@ -1,4 +1,4 @@
-package com.lagradost.quicknovel
+package com.lagradost.quicknovel.ui.home
 
 import android.content.Context
 import android.os.Bundle
@@ -8,8 +8,12 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.cardview.widget.CardView
+import androidx.core.content.ContextCompat
 import androidx.navigation.findNavController
 import androidx.recyclerview.widget.RecyclerView
+import com.lagradost.quicknovel.MainAPI
+import com.lagradost.quicknovel.MainActivity
+import com.lagradost.quicknovel.R
 import kotlinx.android.synthetic.main.browse_list_compact.view.*
 
 class BrowseAdapter(
@@ -45,7 +49,8 @@ class BrowseAdapter(
     }
 
     class BrowseCardViewHolder
-    constructor(itemView: View, _context: Context, resView: RecyclerView) : RecyclerView.ViewHolder(itemView) {
+    constructor(itemView: View, _context: Context, resView: RecyclerView) :
+        RecyclerView.ViewHolder(itemView) {
         val context = _context
         val cardView: CardView = itemView.browse_background
         private val browseIconBackground: CardView = itemView.browse_icon_background
@@ -58,7 +63,8 @@ class BrowseAdapter(
             if (icon != null) {
                 browseIcon.setImageResource(icon)
             }
-            browseIconBackground.setCardBackgroundColor(context.getColor(api.iconBackgroundId))
+
+            browseIconBackground.setCardBackgroundColor(ContextCompat.getColor(context, api.iconBackgroundId))
 
             cardView.setOnClickListener {
                 val navController = MainActivity.activity.findNavController(R.id.nav_host_fragment)

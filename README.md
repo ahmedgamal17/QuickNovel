@@ -7,6 +7,24 @@ Adfree FOSS Android app for downloading novels. It also functions as an Epub rea
 
 **Providers used:** 
 
+- https://freewebnovel.com (Made by Adippe & Sir Aguacata)
+
+- https://allnovel.org (Made by Adippe & Sir Aguacata)
+  
+- https://azynovel.com (Made by Adippe & Sir Aguacata)
+
+- https://readfrom.net (Made by Adippe & Sir Aguacata)
+
+- https://ranobes.net (Made by Adippe)
+
+- https://novelfull.com (Made by Sir Aguacata)
+
+- https://mnovelfree.com (Made by Adippe & Sir Aguacata)
+
+- https://novelfullvip.com (Made by Adippe & Sir Aguacata)
+
+- https://engnovel.com (Made by Adippe & Sir Aguacata)
+
 - https://www.novelpassion.com
 
 - https://bestlightnovel.com

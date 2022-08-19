@@ -1,5 +1,6 @@
 package com.lagradost.quicknovel
 
+import com.lagradost.quicknovel.mvvm.logError
 import org.jsoup.Jsoup
 
 const val USER_AGENT =
@@ -8,6 +9,8 @@ const val USER_AGENT =
 abstract class MainAPI {
     open val name = "NONE"
     open val mainUrl = "NONE"
+
+    open val lang = "en" // ISO_639_1 check SubtitleHelper
 
     open val rateLimitTime: Long = 0
 
@@ -21,7 +24,7 @@ abstract class MainAPI {
     open val iconId: Int? = null
     open val iconBackgroundId: Int = R.color.darkBackground
 
-    open fun loadMainPage(
+    open suspend fun loadMainPage(
         page: Int,
         mainCategory: String?,
         orderBy: String?,
@@ -31,24 +34,30 @@ abstract class MainAPI {
     }
 
     open val hasReviews: Boolean = false
-    open fun loadReviews(url: String, page: Int, showSpoilers: Boolean = false): List<UserReview> {
+    open suspend fun loadReviews(url: String, page: Int, showSpoilers: Boolean = false): List<UserReview> {
         throw NotImplementedError()
     }
 
-    open fun search(query: String): List<SearchResponse> {
+    open suspend fun search(query: String): List<SearchResponse>? {
         throw NotImplementedError()
     }
 
-    open fun load(url: String): LoadResponse {
+    open suspend fun load(url: String): LoadResponse? {
         throw NotImplementedError()
     }
 
-    open fun loadHtml(url: String): String? {
+    open suspend fun loadHtml(url: String): String? {
         throw NotImplementedError()
     }
 }
 
 class ErrorLoadingException(message: String? = null) : Exception(message)
+fun MainAPI.fixUrlNull(url: String?): String? {
+    if (url.isNullOrEmpty()) {
+        return null
+    }
+    return fixUrl(url)
+}
 
 fun MainAPI.fixUrl(url: String): String {
     if (url.startsWith("http")) {
@@ -78,15 +87,19 @@ val String?.textClean: String?
 
 fun stripHtml(txt: String, chapterName: String? = null, chapterIndex: Int? = null): String {
     val document = Jsoup.parse(txt)
-    if (chapterName != null && chapterIndex != null) {
-        for (a in document.allElements) {
-            if (a != null && a.hasText() &&
-                (a.text() == chapterName || (a.tagName() == "h3" && a.text().startsWith("Chapter ${chapterIndex + 1}")))
-            ) { // IDK, SOME MIGHT PREFER THIS SETTING??
-                a.remove() // THIS REMOVES THE TITLE
-                break
+    try {
+        if (chapterName != null && chapterIndex != null) {
+            for (a in document.allElements) {
+                if (a != null && a.hasText() &&
+                    (a.text() == chapterName || (a.tagName() == "h3" && a.text().startsWith("Chapter ${chapterIndex + 1}")))
+                ) { // IDK, SOME MIGHT PREFER THIS SETTING??
+                    a.remove() // THIS REMOVES THE TITLE
+                    break
+                }
             }
         }
+    } catch (e : Exception) {
+        logError(e)
     }
 
     return document.html()

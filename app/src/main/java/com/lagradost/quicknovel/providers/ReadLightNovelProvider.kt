@@ -1,97 +1,105 @@
 package com.lagradost.quicknovel.providers
 
 import com.lagradost.quicknovel.*
+import com.lagradost.quicknovel.MainActivity.Companion.app
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import java.lang.Exception
 
 class ReadLightNovelProvider : MainAPI() {
-    override val name: String
-        get() = "ReadLightNovel"
-    override val mainUrl: String
-        get() = "https://www.readlightnovel.me"
-    override val iconId: Int
-        get() = R.drawable.big_icon_readlightnovel
-    override val hasMainPage: Boolean
-        get() = true
+    override val name = "ReadLightNovel"
+    override val mainUrl = "https://www.readlightnovel.me"
+    override val iconId = R.drawable.big_icon_readlightnovel
+    override val hasMainPage = true
 
-    override val iconBackgroundId: Int
-        get() = R.color.readLightNovelColor
+    override val iconBackgroundId = R.color.readLightNovelColor
 
     override val orderBys: List<Pair<String, String>>
         get() = listOf(
-            Pair("Top Rated", "top_rated"),
-            Pair("Most Viewed", "view")
+            Pair("Top Rated", "top-rated"),
+            Pair("Most Viewed", "most-viewed")
         )
 
-    override val tags: List<Pair<String, String>>
-        get() = listOf(
-            Pair("All", ""),
-            Pair("Action", "action"),
-            Pair("Adventure", "adventure"),
-            Pair("Celebrity", "celebrity"),
-            Pair("Comedy", "comedy"),
-            Pair("Drama", "drama"),
-            Pair("Ecchi", "ecchi"),
-            Pair("Fantasy", "fantasy"),
-            Pair("Gender Bender", "gender-bender"),
-            Pair("Harem", "harem"),
-            Pair("Historical", "historical"),
-            Pair("Horror", "horror"),
-            Pair("Josei", "josei"),
-            Pair("Martial Arts", "martial-arts"),
-            Pair("Mature", "mature"),
-            Pair("Mecha", "mecha"),
-            Pair("Mystery", "mystery"),
-            Pair("Psychological", "psychological"),
-            Pair("Romance", "romance"),
-            Pair("School Life", "school-life"),
-            Pair("Sci-fi", "sci-fi"),
-            Pair("Seinen", "seinen"),
-            Pair("Shotacon", "shotacon"),
-            Pair("Shoujo", "shoujo"),
-            Pair("Shoujo Ai", "shoujo-ai"),
-            Pair("Shounen", "shounen"),
-            Pair("Shounen Ai", "shounen-ai"),
-            Pair("Slice of Life", "slice-of-life"),
-            Pair("Smut", "smut"),
-            Pair("Sports", "sports"),
-            Pair("Supernatural", "supernatural"),
-            Pair("Tragedy", "tragedy"),
-            Pair("Wuxia", "wuxia"),
-            Pair("Xianxia", "xianxia"),
-            Pair("Xuanhuan", "xuanhuan"),
-            Pair("Yaoi", "yaoi"),
-            Pair("Yuri", "yuri")
-        )
+    override val tags = listOf(
+        Pair("All", ""),
+        Pair("Action", "action"),
+        Pair("Adventure", "adventure"),
+        Pair("Celebrity", "celebrity"),
+        Pair("Comedy", "comedy"),
+        Pair("Drama", "drama"),
+        Pair("Ecchi", "ecchi"),
+        Pair("Fantasy", "fantasy"),
+        Pair("Gender Bender", "gender-bender"),
+        Pair("Harem", "harem"),
+        Pair("Historical", "historical"),
+        Pair("Horror", "horror"),
+        Pair("Josei", "josei"),
+        Pair("Martial Arts", "martial-arts"),
+        Pair("Mature", "mature"),
+        Pair("Mecha", "mecha"),
+        Pair("Mystery", "mystery"),
+        Pair("Psychological", "psychological"),
+        Pair("Romance", "romance"),
+        Pair("School Life", "school-life"),
+        Pair("Sci-fi", "sci-fi"),
+        Pair("Seinen", "seinen"),
+        Pair("Shotacon", "shotacon"),
+        Pair("Shoujo", "shoujo"),
+        Pair("Shoujo Ai", "shoujo-ai"),
+        Pair("Shounen", "shounen"),
+        Pair("Shounen Ai", "shounen-ai"),
+        Pair("Slice of Life", "slice-of-life"),
+        Pair("Smut", "smut"),
+        Pair("Sports", "sports"),
+        Pair("Supernatural", "supernatural"),
+        Pair("Tragedy", "tragedy"),
+        Pair("Wuxia", "wuxia"),
+        Pair("Xianxia", "xianxia"),
+        Pair("Xuanhuan", "xuanhuan"),
+        Pair("Yaoi", "yaoi"),
+        Pair("Yuri", "yuri")
+    )
 
-    override fun loadMainPage(page: Int, mainCategory: String?, orderBy: String?, tag: String?): HeadMainPageResponse {
-        val url = "$mainUrl/${if (tag == "") "top-novel" else "category/$tag"}/$page?change_type=$orderBy"
-        val response = khttp.get(url)
+    override suspend fun loadMainPage(
+        page: Int,
+        mainCategory: String?,
+        orderBy: String?,
+        tag: String?
+    ): HeadMainPageResponse {
+        val url =
+            "$mainUrl/${if (tag == "") "top-novels" else "genre/$tag"}/$orderBy/$page"
+        val response = app.get(url)
 
         val document = Jsoup.parse(response.text)
         val headers = document.select("div.top-novel-block")
         if (headers.size <= 0) return HeadMainPageResponse(url, ArrayList())
 
-        val returnValue: ArrayList<SearchResponse> = ArrayList()
-        for (h in headers) {
-            val content = h.selectFirst("> div.top-novel-content")
-            val nameHeader = h.selectFirst("div.top-novel-header > h2 > a")
-            val cUrl = nameHeader.attr("href")
-            val name = nameHeader.text()
-            val posterUrl = content.selectFirst("> div.top-novel-cover > a > img").attr("src")
+        val returnValue = headers.mapNotNull {
+            val content = it.selectFirst("> div.top-novel-content")
+            val nameHeader = it.selectFirst("div.top-novel-header > h2 > a")
+            val cUrl = nameHeader?.attr("href") ?: return@mapNotNull null
+            val name = nameHeader.text() ?: return@mapNotNull null
+            val posterUrl = content?.selectFirst("> div.top-novel-cover > a > img")?.attr("src")
             /* val tags = ArrayList(
                  content.select("> div.top-novel-body > div.novel-item > div.content")
                      .last().select("> ul > li > a").map { t -> t.text() })*/
-            returnValue.add(SearchResponse(name, fixUrl(cUrl), fixUrl(posterUrl), null, null, this.name)) //tags
+
+            SearchResponse(
+                name,
+                fixUrl(cUrl),
+                fixUrlNull(posterUrl),
+                null,
+                null,
+                this.name
+            )
+            //tags
         }
         return HeadMainPageResponse(url, returnValue)
     }
 
-    override fun loadHtml(url: String): String? {
-        val response = khttp.get(url)
+    override suspend fun loadHtml(url: String): String? {
+        val response = app.get(url)
         val document = Jsoup.parse(response.text)
-        val content = document.selectFirst("div.chapter-content3 > div.desc")
+        val content = document.selectFirst("div.chapter-content3 > div.desc") ?: return null
         //content.select("div").remove()
         content.select("div.alert").remove()
         content.select("#podium-spot").remove()
@@ -102,7 +110,9 @@ class ReadLightNovelProvider : MainAPI() {
         content.select("p.hid").remove()
 
         for (i in content.allElements) {
-            if (i.tagName() == "p" && (i.text().contains("lightnovelpub") || i.text().contains("readlightnovel"))) {
+            if (i.tagName() == "p" && (i.text().contains("lightnovelpub") || i.text()
+                    .contains("readlightnovel"))
+            ) {
                 i.remove()
             } else if (i.classNames().contains("hidden") || i.classNames().contains("hid")) {
                 i.remove()
@@ -112,8 +122,8 @@ class ReadLightNovelProvider : MainAPI() {
         return content.html()
     }
 
-    override fun search(query: String): List<SearchResponse> {
-        val response = khttp.post(
+    override suspend fun search(query: String): List<SearchResponse> {
+        val response = app.post(
             "$mainUrl/search/autocomplete",
             headers = mapOf(
                 "referer" to mainUrl,
@@ -132,21 +142,22 @@ class ReadLightNovelProvider : MainAPI() {
             val spans = h.select("> span")
 
             val name = spans[1].text()
-            val url = h.attr("href")
+            val url = h?.attr("href") ?: continue
 
-            val posterUrl = spans[0].selectFirst("> img").attr("src")
+            val posterUrl = spans[0].selectFirst("> img")?.attr("src")
 
             returnValue.add(SearchResponse(name, url, posterUrl, null, null, this.name))
         }
         return returnValue
     }
 
-    override fun load(url: String): LoadResponse {
-        val response = khttp.get(url.replace("http://","https://"))
+    override suspend fun load(url: String): LoadResponse? {
+        val response = app.get(url.replace("http://", "https://"))
 
         val document = Jsoup.parse(response.text)
 
-        val info = document.select("div.novel-detail-body") //div.novel-details > div.novel-detail-item >
+        val info =
+            document.select("div.novel-detail-body") //div.novel-details > div.novel-detail-item >
         val names = document.select("div.novel-detail-header").map { t -> t.text() }
 
         // 0 = Type (ex Web Novel)
@@ -168,8 +179,8 @@ class ReadLightNovelProvider : MainAPI() {
         }
 
         val rating = (getIndex("Rating").text().toFloat() * 100).toInt()
-        val name = document.selectFirst("div.block-title").text()
-        var author = getIndex("Author(s)").selectFirst("> ul > li").text()
+        val name = document.selectFirst("div.block-title")?.text() ?: return null
+        var author = getIndex("Author(s)").selectFirst("> ul > li")?.text()
         if (author == "N/A") author = null
 
         val tagsDoc = getIndex("Genre").select("ul > li > a")
@@ -181,7 +192,7 @@ class ReadLightNovelProvider : MainAPI() {
         var synopsis = ""
         val synoParts = getIndex("Description").select("> p")
         for (s in synoParts) {
-            synopsis += s.text()!! + "\n\n"
+            synopsis += s.text() + "\n\n"
         }
 
         val data: ArrayList<ChapterData> = ArrayList()
@@ -194,7 +205,7 @@ class ReadLightNovelProvider : MainAPI() {
                 p.select("> div.panel-collapse > div.panel-body > div.tab-content > div.tab-pane > ul.chapter-chs > li > a")
             for (c in chapterHeaders) {
                 val cName = c.text()
-                val cUrl = c.attr("href")
+                val cUrl = c?.attr("href") ?: continue
                 var rName = cName
                     .replace("CH ([0-9]*)".toRegex(), "Chapter $1")
                     .replace("CH ", "")
@@ -210,7 +221,7 @@ class ReadLightNovelProvider : MainAPI() {
             }
         }
 
-        val posterUrl = document.selectFirst("div.novel-cover > a > img").attr("src")
+        val posterUrl = document.selectFirst("div.novel-cover > a > img")?.attr("src")
 
         val views = getIndex("Total Views").text().replace(",", "").replace(".", "").toInt()
         val peopleRated = null
@@ -226,7 +237,7 @@ class ReadLightNovelProvider : MainAPI() {
             name,
             data,
             author,
-            fixUrl(posterUrl),
+            fixUrlNull(posterUrl),
             rating,
             peopleRated,
             views,

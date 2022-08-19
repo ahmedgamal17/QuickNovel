@@ -3,21 +3,17 @@ package com.lagradost.quicknovel.providers
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.quicknovel.*
 import com.lagradost.quicknovel.DataStore.toKotlinObject
-import khttp.get
+import com.lagradost.quicknovel.MainActivity.Companion.app
+import kotlinx.coroutines.delay
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.lang.Thread.sleep
 import java.util.*
 
 class LightNovelPubProvider : MainAPI() {
-    override val name: String
-        get() = "LightNovelPub"
-    override val mainUrl: String
-        get() = "https://www.lightnovelpub.com"
-
-    override val rateLimitTime: Long
-        get() = 5000
+    override val name = "LightNovelPub"
+    override val mainUrl = "https://www.lightnovelpub.com"
+    override val rateLimitTime: Long = 5000
 
     data class SearchRoot(
         @JsonProperty("\$id")
@@ -26,13 +22,15 @@ class LightNovelPubProvider : MainAPI() {
         val resultview: String,
     )
 
-    override fun loadHtml(url: String): String? { // THEY RATE LIMIT THE FUCK ON THIS PROVIDER
-        val response = get(url)
+    override suspend fun loadHtml(url: String): String? { // THEY RATE LIMIT THE FUCK ON THIS PROVIDER
+        val response = app.get(url)
         val document = Jsoup.parse(response.text)
-        val items = document.selectFirst("div#chapter-container")
+        val items = document.selectFirst("div#chapter-container") ?: return null
         // THEY HAVE SHIT LIKE " <p class="kyzywl">The source of this content is lightnovelpub[.]com</p> " random class, no normal text has a class
         for (i in items.allElements) {
-            if (i.tagName() == "p" && i.classNames().size > 0 && i.text().contains("lightnovelpub")) {
+            if (i.tagName() == "p" && i.classNames().size > 0 && i.text()
+                    .contains("lightnovelpub")
+            ) {
                 i.remove()
             }
         }
@@ -40,7 +38,7 @@ class LightNovelPubProvider : MainAPI() {
     }
 
     private fun getChaps(document: Document): List<OrderedChapterData> {
-        return document.select("ul.chapter-list > li").map { parseChap(it) }
+        return document.select("ul.chapter-list > li").mapNotNull { parseChap(it) }
     }
 
     data class OrderedChapterData(
@@ -50,30 +48,31 @@ class LightNovelPubProvider : MainAPI() {
         val orderno: Int,
     )
 
-    private fun parseChap(element: Element): OrderedChapterData {
+    private fun parseChap(element: Element): OrderedChapterData? {
         val orderNum = element.attr("data-orderno").toInt()
         val a = element.selectFirst("> a")
-        val href = fixUrl(a.attr("href"))
-        val title = a.selectFirst("> strong.chapter-title").text()
-        val time = a.selectFirst("> time.chapter-update").text() // attr datetime
-        return OrderedChapterData(title, href, time, orderNum)
+        val href = fixUrl(a?.attr("href") ?: return null)
+        val title = a.selectFirst("> strong.chapter-title")?.text()
+        val time = a.selectFirst("> time.chapter-update")?.text() // attr datetime
+        return OrderedChapterData(title ?: return null, href, time, orderNum)
     }
 
-    override fun load(url: String): LoadResponse {
-        val response = get(url)
+    override suspend fun load(url: String): LoadResponse? {
+        val response = app.get(url)
         val document = Jsoup.parse(response.text)
-        val poster = document.selectFirst("div.fixed-img > figure.cover > img").attr("data-src")
+        val poster = document.selectFirst("div.fixed-img > figure.cover > img")?.attr("data-src")
         val novelInfo = document.selectFirst("div.header-body > div.novel-info")
-        val mainHead = novelInfo.selectFirst("> div.main-head")
+        val mainHead = novelInfo?.selectFirst("> div.main-head")
 
-        val title = mainHead.selectFirst("> h1.novel-title").text()
+        val title = mainHead?.selectFirst("> h1.novel-title")?.text() ?: return null
         val author = mainHead.selectFirst("> div.author > a > span")?.text()
         val rating =
-            mainHead.selectFirst("> div.rating > div.rating-star > p > strong")?.text()?.toFloatOrNull()?.times(200)
+            mainHead.selectFirst("> div.rating > div.rating-star > p > strong")?.text()
+                ?.toFloatOrNull()?.times(200)
                 ?.toInt()
 
         val headerStats = novelInfo.select("> div.header-stats > span > strong")
-        val viewsText = headerStats?.get(1)?.text()?.toLowerCase(Locale.getDefault())
+        val viewsText = headerStats.get(1)?.text()?.lowercase(Locale.getDefault())
         val views = if (viewsText == null) null else {
             val times =
                 when {
@@ -88,18 +87,21 @@ class LightNovelPubProvider : MainAPI() {
             (viewsText.replace("m", "").replace("k", "").toFloat() * times).toInt()
         }
 
-        val status = when (headerStats?.get(3)?.text()) {
+        val status = when (headerStats.get(3)?.text()) {
             "Completed" -> 2
             "Ongoing" -> 1
             else -> 0
         }
 
-        val genres = ArrayList(novelInfo?.select("> div.categories > ul > li > a")?.map { it.text() } ?: listOf())
-        val tags = ArrayList(document?.select("> div.tags > ul.content > li > a")?.map { it.text() } ?: listOf())
+        val genres =
+            ArrayList(novelInfo.select("> div.categories > ul > li > a")?.map { it.text() }
+                ?: listOf())
+        val tags = ArrayList(document.select("> div.tags > ul.content > li > a")?.map { it.text() }
+            ?: listOf())
         genres.addAll(tags)
         val synopsis = document.selectFirst("div.summary > div.content")?.text()
 
-        val chapsDocument = Jsoup.parse(get("$url/chapters").text)
+        val chapsDocument = Jsoup.parse(app.get("$url/chapters").text)
 
         val chaps = ArrayList(getChaps(chapsDocument))
 
@@ -126,8 +128,8 @@ class LightNovelPubProvider : MainAPI() {
 
             val dataList =
                 list.map { // CANT PMAP DUE TO : This operation is rate limited.
-                    sleep(1000)
-                    val localResponse = get(it.second)
+                    delay(1000)
+                    val localResponse = app.get(it.second)
                     val localDocument = Jsoup.parse(localResponse.text)
                     val localChaps = getChaps(localDocument)
                     if (localChaps.isEmpty()) {
@@ -141,7 +143,8 @@ class LightNovelPubProvider : MainAPI() {
             }
 
         }
-        val data = chaps.sortedBy { it.orderno }.map { ChapterData(it.name, it.url, it.dateOfRelease, null) }
+        val data = chaps.sortedBy { it.orderno }
+            .map { ChapterData(it.name, it.url, it.dateOfRelease, null) }
 
         return LoadResponse(
             url,
@@ -158,9 +161,23 @@ class LightNovelPubProvider : MainAPI() {
         )
     }
 
-    override fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/lnwsearchlive?inputContent=$query"
-        val response = khttp.get(url)
+    override suspend fun search(query: String): List<SearchResponse> {
+        val searchRequest = app.get("$mainUrl/search")
+        val searchToken = Jsoup.parse(searchRequest.text)
+            .select("input[name='__LNRequestVerifyToken']").`val`()
+
+        val url = "$mainUrl/lnsearchlive"
+        // This fuckery because sometimes khttp fails to get cookies as it only uses lowercase
+        val cookie = Regex("""lncoreantifrg=.*?;""").find(searchRequest.headers.toString())?.groupValues?.get(0)
+        val response = app.post(
+            url,
+            data = mapOf("inputContent" to query),
+            headers = mapOf(
+                "LNRequestVerifyToken" to searchToken!!,
+                // Using cookies = searchRequest.cookies doesn't work
+                "cookie" to cookie!!
+            )
+        )
         val parse = response.text.toKotlinObject<SearchRoot>()
         val text = parse.resultview.replace("\\", "")
 
@@ -169,13 +186,23 @@ class LightNovelPubProvider : MainAPI() {
         if (items.size <= 0) return ArrayList()
         val returnValue: ArrayList<SearchResponse> = ArrayList()
         for (item in items) {
-            val title = item.attr("title")
-            val href = item.attr("href")
-            val poster = item.selectFirst("> div.cover-wrap > figure > img").attr("src")
-            val latestChap = "Chapter " + item.select("> div.item-body > div.novel-stats > span").last().text()
-                .replace("Chapters", "")
+            val title = item?.attr("title") ?: continue
+            val href = item.attr("href") ?: continue
+            val poster = item.selectFirst("> div.cover-wrap > figure > img")?.attr("src")
+            val latestChap =
+                "Chapter " + item.select("> div.item-body > div.novel-stats > span").last()?.text()
+                    ?.replace("Chapters", "")
 
-            returnValue.add(SearchResponse(title, fixUrl(href), poster, null, latestChap, this.name))
+            returnValue.add(
+                SearchResponse(
+                    title,
+                    fixUrl(href),
+                    poster,
+                    null,
+                    latestChap,
+                    this.name
+                )
+            )
         }
 
         return returnValue

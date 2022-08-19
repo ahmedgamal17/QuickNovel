@@ -1,6 +1,7 @@
 package com.lagradost.quicknovel.util
 
 import android.app.Activity
+import android.content.Context
 import androidx.preference.PreferenceManager
 import com.lagradost.quicknovel.APIRepository
 import com.lagradost.quicknovel.MainAPI
@@ -17,17 +18,44 @@ class Apis {
             BestLightNovelProvider(),
             WuxiaWorldOnlineProvider(),
             RoyalRoadProvider(),
-            WuxiaWorldSiteProvider(),
+            FreewebnovelProvider(),
+            AzynovelProvider(),
+            ReadfromnetProvider(),
+            AllNovelProvider(),
+            RanobesProvider(),
+            NovelFullProvider(),
+            //MNovelFreeProvider(), // same as NovelFullVipProvider
+            NovelFullVipProvider(),
+            EngNovelProvider(),
+
+
+            // chapter captcha
+//            WuxiaWorldSiteProvider(),
             ReadLightNovelProvider(),
             BoxNovelProvider(),
             ComrademaoProvider(),
             LightNovelPubProvider(),
             ReadNovelFullProvider(),
             ScribblehubProvider(),
+            KolNovelProvider(),
+            RewayatArProvider(),
+            ReadAnyBookProvider(),
+            MeioNovelProvider(),
+            MoreNovelProvider(),
+            IndoWebNovelProvider(),
+            SakuraNovelProvider(),
         )
 
         fun getApiFromName(name: String): APIRepository {
             return getApiFromNameOrNull(name) ?: APIRepository(apis[1])
+        }
+
+        private fun getApiFromNameNull(apiName: String?): MainAPI? {
+            for (api in apis) {
+                if (apiName == api.name)
+                    return api
+            }
+            return null
         }
 
         fun getApiFromNameOrNull(name: String): APIRepository? {
@@ -36,6 +64,7 @@ class Apis {
                     return APIRepository(a)
                 }
             }
+            if(name == RedditProvider().name) return APIRepository(RedditProvider())
             return null
         }
 
@@ -47,13 +76,40 @@ class Apis {
             println(str)
         }
 
-        fun Activity.getApiSettings(): HashSet<String> {
+        fun Context.getApiSettings(): HashSet<String> {
             val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
 
-            return settingsManager.getStringSet(
-                getString(R.string.search_providers_list_key),
-                setOf(apis[defProvider].name)
-            )?.toHashSet() ?: hashSetOf(apis[defProvider].name)
+            val hashSet = HashSet<String>()
+            hashSet.addAll(apis.map { it.name })
+
+            val set = settingsManager.getStringSet(
+                this.getString(R.string.search_providers_list_key),
+                hashSet
+            )?.toHashSet() ?: hashSet
+
+            val activeLangs = getApiProviderLangSettings()
+            val list = HashSet<String>()
+            for (name in set) {
+                val api = getApiFromNameNull(name) ?: continue
+                if (activeLangs.contains(api.lang)) {
+                    list.add(name)
+                }
+            }
+            if (list.isEmpty()) return hashSet
+            return list
+        }
+
+        fun Context.getApiProviderLangSettings(): HashSet<String> {
+            val settingsManager = PreferenceManager.getDefaultSharedPreferences(this)
+            val hashSet = HashSet<String>()
+            hashSet.add("en") // def is only en
+            val list = settingsManager.getStringSet(
+                this.getString(R.string.provider_lang_key),
+                hashSet.toMutableSet()
+            )
+
+            if (list.isNullOrEmpty()) return hashSet
+            return list.toHashSet()
         }
     }
 }

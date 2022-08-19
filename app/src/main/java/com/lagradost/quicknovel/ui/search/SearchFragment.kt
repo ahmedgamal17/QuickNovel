@@ -23,9 +23,11 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.lagradost.quicknovel.*
 import com.lagradost.quicknovel.APIRepository.Companion.providersActive
 import com.lagradost.quicknovel.mvvm.Resource
+import com.lagradost.quicknovel.mvvm.normalSafeApiCall
 import com.lagradost.quicknovel.mvvm.observe
 import com.lagradost.quicknovel.ui.search.SearchHelper.handleSearchClickCallback
 import com.lagradost.quicknovel.util.Apis.Companion.apis
+import com.lagradost.quicknovel.util.Apis.Companion.getApiProviderLangSettings
 import com.lagradost.quicknovel.util.Apis.Companion.getApiSettings
 import com.lagradost.quicknovel.util.Event
 import com.lagradost.quicknovel.util.UIHelper.fixPaddingStatusbar
@@ -44,8 +46,10 @@ class SearchFragment : Fragment() {
             bottomSheetDialogBuilder.setContentView(R.layout.home_episodes_expanded)
             val title = bottomSheetDialogBuilder.findViewById<TextView>(R.id.home_expanded_text)!!
             title.text = item.name
-            val recycle = bottomSheetDialogBuilder.findViewById<AutofitRecyclerView>(R.id.home_expanded_recycler)!!
-            val titleHolder = bottomSheetDialogBuilder.findViewById<FrameLayout>(R.id.home_expanded_drag_down)!!
+            val recycle =
+                bottomSheetDialogBuilder.findViewById<AutofitRecyclerView>(R.id.home_expanded_recycler)!!
+            val titleHolder =
+                bottomSheetDialogBuilder.findViewById<FrameLayout>(R.id.home_expanded_drag_down)!!
 
             titleHolder.setOnClickListener {
                 bottomSheetDialogBuilder.dismiss()
@@ -147,11 +151,16 @@ class SearchFragment : Fragment() {
         }
 
         observe(searchViewModel.currentSearch) { list ->
-            (search_master_recycler?.adapter as ParentItemAdapter?)?.apply {
-                items = list.map {
-                    HomePageList(it.apiName, if (it.data is Resource.Success) it.data.value else listOf())
+            normalSafeApiCall {
+                (search_master_recycler?.adapter as ParentItemAdapter?)?.apply {
+                    items = list.map {
+                        HomePageList(
+                            it.apiName,
+                            if (it.data is Resource.Success) it.data.value else listOf()
+                        )
+                    }
+                    notifyDataSetChanged()
                 }
-                notifyDataSetChanged()
             }
         }
 
@@ -166,11 +175,12 @@ class SearchFragment : Fragment() {
                 SearchHelper.handleSearchClickCallback(activity, callback)
             }
 
-        val masterAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder> = ParentItemAdapter(listOf(), { callback ->
-            SearchHelper.handleSearchClickCallback(activity, callback)
-        }, { item ->
-            activity?.loadHomepageList(item)
-        })
+        val masterAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder> =
+            ParentItemAdapter(listOf(), { callback ->
+                SearchHelper.handleSearchClickCallback(activity, callback)
+            }, { item ->
+                activity?.loadHomepageList(item)
+            })
 
         cardSpace.adapter = adapter
         //cardSpace.layoutManager = GridLayoutManager(context, 1)
@@ -180,31 +190,37 @@ class SearchFragment : Fragment() {
         searchMagIcon.scaleX = 0.65f
         searchMagIcon.scaleY = 0.65f
 
-        search_filter.setOnClickListener {
+        search_filter.setOnClickListener { view ->
             val builder: AlertDialog.Builder = AlertDialog.Builder(requireContext())
             //val settingsManager = PreferenceManager.getDefaultSharedPreferences(MainActivity.activity)
-            val apiNamesSetting = requireActivity().getApiSettings()
+            val apiNamesSetting = view.context.getApiSettings()
 
-            val apiNames = apis.map { it.name }
+            val langs = view.context.getApiProviderLangSettings()
+            val apiNames = apis.mapNotNull { if (langs.contains(it.lang)) it.name else null }
 
             builder.setMultiChoiceItems(
                 apiNames.toTypedArray(),
                 apiNames.map { a -> apiNamesSetting.contains(a) }.toBooleanArray()
             ) { _, position: Int, checked: Boolean ->
                 val apiNamesSettingLocal = requireActivity().getApiSettings()
-                val settingsManagerLocal = PreferenceManager.getDefaultSharedPreferences(activity)
+                val settingsManagerLocal = activity?.let {
+                    PreferenceManager.getDefaultSharedPreferences(
+                        it
+                    )
+                }
                 if (checked) {
                     apiNamesSettingLocal.add(apiNames[position])
                 } else {
                     apiNamesSettingLocal.remove(apiNames[position])
                 }
 
-                val edit = settingsManagerLocal.edit()
-                edit.putStringSet(getString(R.string.search_providers_list_key),
+                val edit = settingsManagerLocal?.edit()
+                edit?.putStringSet(
+                    getString(R.string.search_providers_list_key),
                     apiNames.filter { a -> apiNamesSettingLocal.contains(a) }.toSet()
                 )
-                edit.apply()
-                providersActive = apiNamesSettingLocal
+                edit?.apply()
+                providersActive = requireContext().getApiSettings()
             }
             builder.setTitle("Search Providers")
             builder.setNegativeButton("Ok") { _, _ -> }
@@ -239,8 +255,8 @@ class SearchFragment : Fragment() {
         search_master_recycler.adapter = masterAdapter
         search_master_recycler.layoutManager = GridLayoutManager(context, 1)
 
-        val settingsManager = PreferenceManager.getDefaultSharedPreferences(context)
-        val isAdvancedSearch = settingsManager.getBoolean("advanced_search", true)
+        val settingsManager = context?.let { PreferenceManager.getDefaultSharedPreferences(it) }
+        val isAdvancedSearch = settingsManager?.getBoolean("advanced_search", true) == true
 
         search_master_recycler.visibility = if (isAdvancedSearch) View.VISIBLE else View.GONE
         cardSpace.visibility = if (!isAdvancedSearch) View.VISIBLE else View.GONE

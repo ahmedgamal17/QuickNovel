@@ -27,6 +27,7 @@ import com.lagradost.quicknovel.ui.download.DownloadHelper.updateDownloadFromCar
 import com.lagradost.quicknovel.util.Coroutines
 import com.lagradost.quicknovel.util.SettingsHelper.getDownloadIsCompact
 import com.lagradost.quicknovel.util.UIHelper.popupMenu
+import com.lagradost.quicknovel.util.UIHelper.setImage
 import com.lagradost.quicknovel.util.toPx
 import com.lagradost.quicknovel.widget.AutofitRecyclerView
 import kotlinx.android.synthetic.main.download_result_compact.view.*
@@ -138,14 +139,7 @@ class DownloadAdapter(
                     downloadUpdate.isEnabled = true
                 }
             }
-
-            val glideUrl =
-                GlideUrl(card.posterUrl)
-            localActivity.let {
-                Glide.with(it)
-                    .load(glideUrl)
-                    .into(cardView)
-            }
+            cardView.setImage(card.posterUrl)
 
             if (downloadUpdate != null) {
                 downloadUpdate.contentDescription = when (realState) {
@@ -289,7 +283,6 @@ class DownloadAdapter(
                             2 -> handleUpdate()
                             3 -> handleDelete()
                         }
-                        println(itemId)
                     }
                     return@setOnLongClickListener true
                 }

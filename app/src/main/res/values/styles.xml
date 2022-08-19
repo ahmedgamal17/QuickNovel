@@ -96,6 +96,35 @@
         <item name="textAllCaps">false</item>
     </style>
 
+    <style name="AlertDialogCustom" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:textColor">?attr/textColor</item>
+        <item name="android:textColorPrimary">?attr/textColor</item>
+        <!--<item name="android:background">@color/darkBackground</item>-->
+        <item name="android:textAllCaps">false</item>
+        <!--<item name="android:colorBackground">@color/darkBackground</item>-->
+        <item name="textColorAlertDialogListItem">?attr/textColor</item>
+        <item name="colorControlNormal">?attr/textColor</item>
+        <!-- colorPrimarySecond used because colorPrimary fails for no reason -->
+        <item name="colorControlActivated">?attr/colorPrimary</item>
+
+        <item name="android:windowMinWidthMajor">@android:dimen/dialog_min_width_major</item>
+        <item name="android:windowMinWidthMinor">@android:dimen/dialog_min_width_minor</item>
+        <item name="android:windowBackground">@drawable/dialog__window_background</item>
+    </style>
+    <style name="AlertDialogCustomTransparent" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@color/transparent</item>
+    </style>
+    <style name="AlertDialogCustomBlack" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">?attr/darkBackground</item>
+        <item name="android:layout_width">fill_parent</item>
+        <item name="android:layout_height">fill_parent</item>
+        <!-- No backgrounds, titles or window float -->
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:navigationBarColor">?attr/darkBackground</item>
+    </style>
+
     <style name="RoundedBgTextView" parent="@android:style/Widget.TextView">
         <item name="roundedTextHorizontalPadding">2dp</item>
         <item name="roundedTextVerticalPadding">2dp</item>
@@ -103,6 +132,24 @@
         <item name="roundedTextDrawableLeft">@drawable/rounded_text_bg_left</item>
         <item name="roundedTextDrawableMid">@drawable/rounded_text_bg_mid</item>
         <item name="roundedTextDrawableRight">@drawable/rounded_text_bg_right</item>
+    </style>
+
+    <style name="NiceButton" parent="@style/Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="iconGravity">textStart</item>
+        <item name="android:padding">5dp</item>
+        <item name="android:layout_marginStart">5dp</item>
+        <item name="android:layout_marginEnd">5dp</item>
+        <item name="android:layout_height">50dp</item>
+        <item name="android:gravity">center</item>
+        <item name="iconSize">20dp</item>
+        <item name="textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+        <item name="cornerRadius">5dp</item>
+        <item name="cornerRadius">5dp</item>
+        <item name="strokeWidth">2dp</item>
+        <item name="android:textColor">?attr/colorPrimary</item>
+        <item name="strokeColor">?attr/colorPrimary</item>
+        <item name="rippleColor">?attr/colorPrimary</item>
     </style>
 
     <style name="AppTextViewStyle" parent="android:Widget.TextView">
@@ -204,5 +251,94 @@
         <item name="colorOnPrimary">#EC3838</item>
         <!-- Needed for leanback fuckery -->
         <item name="android:colorAccent">@color/colorPrimaryRed</item>
+    </style>
+
+    <style name="OverlayPrimaryColorCarnationPink">
+        <item name="colorPrimary">@color/colorPrimaryCarnationPink</item>
+        <item name="android:colorPrimary">@color/colorPrimaryCarnationPink</item>
+        <item name="colorPrimaryDark">#83366f</item>
+        <item name="colorAccent">#BD5DA5</item>
+        <item name="colorOnPrimary">#BD5DA5</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryCarnationPink</item>
+    </style>
+
+    <style name="OverlayPrimaryColorMaroon">
+        <item name="colorPrimary">@color/colorPrimaryMaroon</item>
+        <item name="android:colorPrimary">@color/colorPrimaryMaroon</item>
+        <item name="colorPrimaryDark">#370C0C</item>
+        <item name="colorAccent">#451010</item>
+        <item name="colorOnPrimary">#451010</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryMaroon</item>
+    </style>
+
+    <style name="OverlayPrimaryColorDarkGreen">
+        <item name="colorPrimary">@color/colorPrimaryDarkGreen</item>
+        <item name="android:colorPrimary">@color/colorPrimaryDarkGreen</item>
+        <item name="colorPrimaryDark">#003d00</item>
+        <item name="colorAccent">#004500</item>
+        <item name="colorOnPrimary">#004500</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryDarkGreen</item>
+    </style>
+
+    <style name="OverlayPrimaryColorNavyBlue">
+        <item name="colorPrimary">@color/colorPrimaryNavyBlue</item>
+        <item name="android:colorPrimary">@color/colorPrimaryNavyBlue</item>
+        <item name="colorPrimaryDark">#000073</item>
+        <item name="colorAccent">#000080</item>
+        <item name="colorOnPrimary">#000080</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryNavyBlue</item>
+    </style>
+
+    <style name="OverlayPrimaryColorGrey">
+        <item name="colorPrimary">@color/colorPrimaryGrey</item>
+        <item name="android:colorPrimary">@color/colorPrimaryGrey</item>
+        <item name="colorPrimaryDark">#484848</item>
+        <item name="colorAccent">#515151</item>
+        <item name="colorOnPrimary">#515151</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryGrey</item>
+    </style>
+
+    <style name="OverlayPrimaryColorWhite">
+        <item name="colorPrimary">@color/colorPrimaryWhite</item>
+        <item name="android:colorPrimary">@color/colorPrimaryWhite</item>
+        <item name="colorPrimaryDark">#CCCCCC</item>
+        <item name="colorAccent">#FFFFFF</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryWhite</item>
+    </style>
+
+    <style name="OverlayPrimaryColorBrown">
+        <item name="colorPrimary">@color/colorPrimaryBrown</item>
+        <item name="android:colorPrimary">@color/colorPrimaryBrown</item>
+        <item name="colorPrimaryDark">#582700</item>
+        <item name="colorAccent">#622C00</item>
+        <item name="colorOnPrimary">#622C00</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryBrown</item>
+    </style>
+
+    <style name="OverlayPrimaryColorOrange">
+        <item name="colorPrimary">@color/colorPrimaryOrange</item>
+        <item name="android:colorPrimary">@color/colorPrimaryOrange</item>
+        <item name="colorPrimaryDark">#B97700</item>
+        <item name="colorAccent">#CE8500</item>
+        <item name="colorOnPrimary">#CE8500</item>
+        <!--   Needed for leanback fuckery   -->
+        <item name="android:colorAccent">@color/colorPrimaryOrange</item>
+    </style>
+
+    <style name="OverlayPrimaryColorBanana">
+        <item name="colorPrimary">@color/colorPrimaryBanana</item>
+        <item name="android:colorPrimary">@color/colorPrimaryBanana</item>
+        <item name="colorPrimaryDark">#9B7D31</item>
+        <item name="colorAccent">#C5B251</item>
+        <item name="colorOnPrimary">#C5A851</item>
+        <item name="android:colorAccent">@color/colorPrimaryBanana</item>
     </style>
 </resources>

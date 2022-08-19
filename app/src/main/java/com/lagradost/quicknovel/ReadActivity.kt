@@ -1,5 +1,6 @@
 package com.lagradost.quicknovel
 
+import GlideImageGetter
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
@@ -8,10 +9,8 @@ import android.app.PendingIntent
 import android.content.*
 import android.content.res.ColorStateList
 import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Color
-import android.graphics.Typeface
+import android.graphics.*
+import android.graphics.drawable.Drawable
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -22,25 +21,28 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.support.v4.media.session.MediaSessionCompat
+import android.text.Html
 import android.text.Spannable
 import android.text.SpannableString
 import android.util.TypedValue
-import android.view.Gravity
-import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.View
+import android.view.*
 import android.widget.*
+import androidx.annotation.NonNull
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.animation.doOnEnd
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.text.HtmlCompat
 import androidx.core.text.getSpans
-import androidx.core.view.marginBottom
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media.session.MediaButtonReceiver
 import androidx.preference.PreferenceManager
+import com.bumptech.glide.Glide
+import com.bumptech.glide.RequestBuilder
+import com.bumptech.glide.request.target.Target
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
@@ -52,10 +54,14 @@ import com.lagradost.quicknovel.DataStore.getKey
 import com.lagradost.quicknovel.DataStore.mapper
 import com.lagradost.quicknovel.DataStore.removeKey
 import com.lagradost.quicknovel.DataStore.setKey
+import com.lagradost.quicknovel.MainActivity.Companion.activity
+import com.lagradost.quicknovel.MainActivity.Companion.app
+import com.lagradost.quicknovel.mvvm.ioSafe
+import com.lagradost.quicknovel.mvvm.logError
+import com.lagradost.quicknovel.providers.RedditProvider
 import com.lagradost.quicknovel.receivers.BecomingNoisyReceiver
 import com.lagradost.quicknovel.services.TTSPauseService
 import com.lagradost.quicknovel.ui.OrientationType
-import com.lagradost.quicknovel.ui.roundedbg.getLineHeight
 import com.lagradost.quicknovel.util.Coroutines.main
 import com.lagradost.quicknovel.util.UIHelper
 import com.lagradost.quicknovel.util.UIHelper.colorFromAttribute
@@ -64,6 +70,14 @@ import com.lagradost.quicknovel.util.UIHelper.popupMenu
 import com.lagradost.quicknovel.util.UIHelper.requestAudioFocus
 import com.lagradost.quicknovel.util.toDp
 import com.lagradost.quicknovel.util.toPx
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.Markwon
+import io.noties.markwon.MarkwonConfiguration
+import io.noties.markwon.SoftBreakAddsNewLinePlugin
+import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.image.AsyncDrawable
+import io.noties.markwon.image.ImageSizeResolver
+import io.noties.markwon.image.glide.GlideImagesPlugin
 import kotlinx.android.synthetic.main.read_main.*
 import kotlinx.coroutines.*
 import nl.siegmann.epublib.domain.Book
@@ -72,11 +86,11 @@ import org.jsoup.Jsoup
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.collections.ArrayList
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.sqrt
+
 
 const val OVERFLOW_NEXT_CHAPTER_DELTA = 600
 const val OVERFLOW_NEXT_CHAPTER_SHOW_PROCENTAGE = 10
@@ -128,6 +142,7 @@ enum class TTSActionType {
 
 class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
     companion object {
+        var markwon: Markwon? = null
         lateinit var readActivity: ReadActivity
         lateinit var images: ArrayList<ImageView>
 
@@ -151,7 +166,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         return if (isFromEpub) book.title else quickdata.meta.name
     }
 
-    private fun getBookBitmap(): Bitmap? {
+    private suspend fun getBookBitmap(): Bitmap? {
         if (bookCover == null) {
             var byteArray: ByteArray? = null
 
@@ -162,7 +177,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 val poster = quickdata.poster
                 if (poster != null) {
                     try {
-                        byteArray = khttp.get(poster).content
+                        byteArray = app.get(poster).okhttpResponse.body.bytes()
                     } catch (e: Exception) {
                         println("BITMAP ERROR: $e")
                     }
@@ -180,7 +195,8 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             ?: "Chapter ${index + 1}" else quickdata.data[index].name
     }
 
-    private fun Context.getChapterData(index: Int, forceReload: Boolean = false): String? {
+    private suspend fun Context.getChapterData(index: Int, forceReload: Boolean = false): String? {
+        println("getChapterData $index")
         val text =
             (if (isFromEpub) book.tableOfContents.tocReferences[index].resource.reader.readText() else getQuickChapter(
                 quickdata.meta,
@@ -196,7 +212,8 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
         for (a in document.allElements) {
             if (a != null && a.hasText() &&
-                (a.text() == chapterName || (a.tagName() == "h3" && a.text().startsWith("Chapter ${index + 1}")))
+                (a.text() == chapterName || (a.tagName() == "h3" && a.text()
+                    .startsWith("Chapter ${index + 1}")))
             ) { // IDK, SOME MIGHT PREFER THIS SETTING??
                 a.remove() // THIS REMOVES THE TITLE
                 break
@@ -210,8 +227,14 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             .replace("</td>", " ")
             //.replace("\n\n", "\n") // REMOVES EMPTY SPACE
             .replace("...", "…") // MAKES EASIER TO WORK WITH
-            .replace("<p>.*<strong>Translator:.*?Editor:.*>".toRegex(), "") // FUCK THIS, LEGIT IN EVERY CHAPTER
-            .replace("<.*?Translator:.*?Editor:.*?>".toRegex(), "") // FUCK THIS, LEGIT IN EVERY CHAPTER
+            .replace(
+                "<p>.*<strong>Translator:.*?Editor:.*>".toRegex(),
+                ""
+            ) // FUCK THIS, LEGIT IN EVERY CHAPTER
+            .replace(
+                "<.*?Translator:.*?Editor:.*?>".toRegex(),
+                ""
+            )
     }
 
 
@@ -246,7 +269,6 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
         /* val arrayAdapter = ArrayAdapter<String>(this, R.layout.sort_bottom_single_choice)
          arrayAdapter.addAll(sortingMethods.toMutableList())
-
          res.choiceMode = AbsListView.CHOICE_MODE_SINGLE
          res.adapter = arrayAdapter
          res.setItemChecked(sotringIndex, true)*/
@@ -473,7 +495,8 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Text To Speech"//getString(R.string.channel_name)
-            val descriptionText = "The TTS notification channel" //getString(R.string.channel_description)
+            val descriptionText =
+                "The TTS notification channel" //getString(R.string.channel_description)
             val importance = NotificationManager.IMPORTANCE_DEFAULT
             val channel = NotificationChannel(TTS_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
@@ -573,8 +596,10 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 }
             }
 
-            reader_bottom_view_tts?.visibility = if (isTTSRunning && !isHidden) View.VISIBLE else View.GONE
-            reader_bottom_view?.visibility = if (!isTTSRunning && !isHidden) View.VISIBLE else View.GONE
+            reader_bottom_view_tts?.visibility =
+                if (isTTSRunning && !isHidden) View.VISIBLE else View.GONE
+            reader_bottom_view?.visibility =
+                if (!isTTSRunning && !isHidden) View.VISIBLE else View.GONE
 
             tts_action_pause_play?.setImageResource(
                 when (value) {
@@ -615,19 +640,16 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
     private fun hideSystemUI() {
         isHidden = true
-        // Enables regular immersive mode.
-        // For "lean back" mode, remove SYSTEM_UI_FLAG_IMMERSIVE.
-        // Or for "sticky immersive," replace it with SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE
-                // Set the content to appear under the system bars so that the
-                // content doesn't resize when the system bars hide and show.
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                // Hide the nav bar and status bar
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN)
-
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, reader_container).let { controller ->
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
 
         fun lowerBottomNav(v: View) {
             v.translationY = 0f
@@ -643,7 +665,11 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         lowerBottomNav(reader_bottom_view_tts)
 
         read_toolbar_holder.translationY = 0f
-        ObjectAnimator.ofFloat(read_toolbar_holder, "translationY", -read_toolbar_holder.height.toFloat()).apply {
+        ObjectAnimator.ofFloat(
+            read_toolbar_holder,
+            "translationY",
+            -read_toolbar_holder.height.toFloat()
+        ).apply {
             duration = 200
             start()
         }.doOnEnd {
@@ -655,14 +681,11 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 // except for the ones that make the content appear under the system bars.
     private fun showSystemUI() {
         isHidden = false
-        if (this.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
-        } else {
-            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
-        }
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowInsetsControllerCompat(
+            window,
+            reader_container
+        ).show(WindowInsetsCompat.Type.systemBars())
 
         read_toolbar_holder.visibility = View.VISIBLE
 
@@ -688,21 +711,66 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         }
     }
 
-    private fun updateTimeText() {
-        val currentTime: String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+    private fun Context.updateTimeText() {
+        val string = if (this.updateTwelveHourTime()) "KK:mm a" else "HH:mm"
+
+        val currentTime: String = SimpleDateFormat(string, Locale.getDefault()).format(Date())
         if (read_time != null) {
             read_time.text = currentTime
             read_time.postDelayed({ -> updateTimeText() }, 1000)
         }
     }
 
+
+    private var hasTriedToFillNextChapter = false
+    private val reddit = RedditProvider()
+    private fun fillNextChapter(): Boolean {
+        if (hasTriedToFillNextChapter || isFromEpub) {
+            return false
+        }
+        hasTriedToFillNextChapter = true
+
+        try {
+            val elements =
+                Jsoup.parse(currentHtmlText).allElements?.filterNotNull() ?: return false
+
+            for (element in elements) {
+                val href = element.attr("href") ?: continue
+
+                val text =
+                    element.ownText().replace(Regex("[\\[\\]().,|{}<>]"), "")?.trim() ?: continue
+                if (text.equals("next", true) || text.equals(
+                        "next chapter",
+                        true
+                    ) || text.equals("next part", true)
+                ) {
+                    val name = reddit.isValidLink(href) ?: "Next"
+                    quickdata.data.add(ChapterData(name, href, null, null))
+                    chapterTitles.add(getChapterName(maxChapter))
+                    maxChapter += 1
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            logError(e)
+        }
+        return false
+    }
+
     private fun loadNextChapter(): Boolean {
         return if (currentChapter >= maxChapter - 1) {
-            Toast.makeText(this, "No more chapters", Toast.LENGTH_SHORT).show()
-            false
+            if (fillNextChapter()) {
+                loadNextChapter()
+            } else {
+                Toast.makeText(this, "No more chapters", Toast.LENGTH_SHORT).show()
+                false
+            }
         } else {
-            loadChapter(currentChapter + 1, true)
-            read_scroll.smoothScrollTo(0, 0)
+            ioSafe {
+                loadChapter(currentChapter + 1, true)
+                read_scroll.smoothScrollTo(0, 0)
+            }
+
             true
         }
     }
@@ -712,7 +780,9 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             false
             //Toast.makeText(this, "No more chapters", Toast.LENGTH_SHORT).show()
         } else {
-            loadChapter(currentChapter - 1, false)
+            ioSafe {
+                loadChapter(currentChapter - 1, false)
+            }
             true
         }
     }
@@ -745,7 +815,9 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             it.scrollTo(0, line.topPosition + offset)
             for (tLine in textLines!!) {
                 if (tLine.bottomPosition + offset > mainScrollY + it.height) {
-                    val size = (mainScrollY + it.height) - (tLine.topPosition + offset) + (read_overlay?.height ?: 0)
+                    val size =
+                        (mainScrollY + it.height) - (tLine.topPosition + offset) + (read_overlay?.height
+                            ?: 0)
                     createTempBottomPadding(size)
                     if (DEBUGGING) {
                         read_temp_bottom_margin?.setBackgroundResource(R.color.colorPrimary)
@@ -891,13 +963,59 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         read_chapter_name.text = "${chapterName!!} (${currentChapter + 1}/${chaptersTotal + 1})"
     }
 
+    fun String.replaceAfterIndex(
+        oldValue: String,
+        newValue: String,
+        ignoreCase: Boolean = false,
+        startIndex: Int = 0
+    ): String {
+        run {
+            var occurrenceIndex: Int = indexOf(oldValue, startIndex, ignoreCase)
+            // FAST PATH: no match
+            if (occurrenceIndex < 0) return this
+
+            val oldValueLength = oldValue.length
+            val searchStep = oldValueLength.coerceAtLeast(1)
+            val newLengthHint = length - oldValueLength + newValue.length
+            if (newLengthHint < 0) throw OutOfMemoryError()
+            val stringBuilder = StringBuilder(newLengthHint)
+
+            var i = 0
+            do {
+                stringBuilder.append(this, i, occurrenceIndex).append(newValue)
+                i = occurrenceIndex + oldValueLength
+                if (occurrenceIndex >= length) break
+                occurrenceIndex = indexOf(oldValue, occurrenceIndex + searchStep, ignoreCase)
+            } while (occurrenceIndex > 0)
+            return stringBuilder.append(this, i, length).toString()
+        }
+    }
+
     private var currentText = ""
-    private fun Context.loadChapter(
+    private var currentHtmlText = ""
+    private suspend fun Context.loadChapter(
         chapterIndex: Int,
         scrollToTop: Boolean,
         scrollToRemember: Boolean = false,
         forceReload: Boolean = false
     ) {
+        if (chapterIndex > maxChapter - 1) {
+            if (isFromEpub) {
+                loadChapter(maxChapter - 1, scrollToTop, scrollToRemember, forceReload)
+                return
+            } else {
+                for (i in maxChapter - 1 until chapterIndex) {
+                    hasTriedToFillNextChapter = false
+                    currentHtmlText = getChapterData(i, false) ?: break
+                    if (!fillNextChapter()) {
+                        break
+                    }
+                }
+                loadChapter(maxChapter - 1, scrollToTop, scrollToRemember, forceReload)
+                return
+            }
+        }
+
         main {
             setKey(EPUB_CURRENT_POSITION, getBookTitle(), chapterIndex)
             val txt = if (isFromEpub) {
@@ -941,19 +1059,79 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             chapterName = getChapterName(chapterIndex)
 
             currentChapter = chapterIndex
-
+            hasTriedToFillNextChapter = false
             read_toolbar.title = getBookTitle()
             read_toolbar.subtitle = chapterName
             read_title_text.text = chapterName
 
             updateChapterName(0)
 
-            val spanned = HtmlCompat.fromHtml(
-                txt, HtmlCompat.FROM_HTML_MODE_LEGACY
-            )
+            this.let { context ->
+                markwon = markwon ?: Markwon.builder(context) // automatically create Glide instance
+                    //.usePlugin(GlideImagesPlugin.create(context)) // use supplied Glide instance
+                    //.usePlugin(GlideImagesPlugin.create(Glide.with(context))) // if you need more control
+                    .usePlugin(HtmlPlugin.create { plugin -> plugin.excludeDefaults(false) })
+                    .usePlugin(GlideImagesPlugin.create(object : GlideImagesPlugin.GlideStore {
+                        @NonNull
+                        override fun load(@NonNull drawable: AsyncDrawable): RequestBuilder<Drawable> {
+                            return Glide.with(context).load(drawable.destination)
+                        }
+
+                        override fun cancel(target: Target<*>) {
+                            Glide.with(context).clear(target)
+                        }
+                    }))
+                    .usePlugin(object :
+                        AbstractMarkwonPlugin() {
+                        override fun configureConfiguration(builder: MarkwonConfiguration.Builder) {
+                            builder.imageSizeResolver(object : ImageSizeResolver() {
+                                override fun resolveImageSize(drawable: AsyncDrawable): Rect {
+                                    //val imageSize = drawable.imageSize
+                                    return drawable.result.bounds
+                                }
+                            })
+                        }
+                    })
+                    .usePlugin(SoftBreakAddsNewLinePlugin.create())
+                    .build()
+
+
+
+                println(
+                    "TEXT == ${
+                        txt.replace(
+                            "\n", "<br>"
+                        )
+                    }"
+                )
+                val index = txt.indexOf("<body>")
+                markwon?.setMarkdown(
+                    read_text,
+                    txt.replaceAfterIndex( // because markwon is fucked we have to replace newlines with breaklines and becausse I dont want 3 br on top I start after body
+                        "\n",
+                        "<br>",
+                        startIndex = index + 7
+                    )//.replaceFirst(Regex("""[\\s*<br>\\s*\\n*]*"""), "")
+                ) ?: run {
+                    val spanned = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        Html.fromHtml(
+                            txt,
+                            Html.FROM_HTML_MODE_LEGACY,
+                            null,
+                            null
+                        ) as Spannable
+                    } else {
+                        Html.fromHtml(txt, null, null) as Spannable
+                    }
+                    read_text?.text = spanned
+                }
+            }
+
+
             //println("TEXT:" + document.html())
-            read_text.text = spanned
-            currentText = spanned.toString()
+            //read_text?.text = spanned
+            currentText = read_text?.text.toString()
+            currentHtmlText = txt
 
             read_text.post {
                 loadTextLines()
@@ -974,7 +1152,6 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         val lay = read_text.layout ?: return
         for (i in 0..lay.lineCount) {
             try {
-                if (lay == null) return
                 textLines?.add(
                     TextLine(
                         lay.getLineStart(i),
@@ -1036,7 +1213,10 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             val cleanText = text
                 .replace("\\.([A-z])".toRegex(), ",$1")//\.([A-z]) \.([^-\s])
                 .replace("([0-9])([.:])([0-9])".toRegex(), "$1,$3") // GOOD FOR DECIMALS
-                .replace("([ \"“‘'])(Dr|Mr|Mrs)\\. ([A-Z])".toRegex(), "$1$2, $3") // Doctor or Mister
+                .replace(
+                    "([ \"“‘'])(Dr|Mr|Mrs)\\. ([A-Z])".toRegex(),
+                    "$1$2, $3"
+                ) // Doctor or Mister
 
             val ttsLines = ArrayList<TTSLine>()
 
@@ -1323,6 +1503,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 checkTTSRange(scroll, true)
             }
         }
+        hideSystemUI()
     }
 
     private fun selectChapter() {
@@ -1337,7 +1518,9 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         builderSingle.setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
 
         builderSingle.setAdapter(arrayAdapter) { _, which ->
-            loadChapter(which, true)
+            ioSafe {
+                loadChapter(which, true)
+            }
         }
 
         val dialog = builderSingle.create()
@@ -1363,25 +1546,27 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
     private var orientationType: Int = OrientationType.DEFAULT.prefValue
 
     private lateinit var mMediaSessionCompat: MediaSessionCompat
-    private val mMediaSessionCallback: MediaSessionCompat.Callback = object : MediaSessionCompat.Callback() {
-        override fun onMediaButtonEvent(mediaButtonEvent: Intent): Boolean {
-            val keyEvent = mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as KeyEvent?
-            if (keyEvent != null) {
-                if (keyEvent.action == KeyEvent.ACTION_DOWN) { // NO DOUBLE SKIP
-                    val consumed = when (keyEvent.keyCode) {
-                        KeyEvent.KEYCODE_MEDIA_PAUSE -> callOnPause()
-                        KeyEvent.KEYCODE_MEDIA_PLAY -> callOnPlay()
-                        KeyEvent.KEYCODE_MEDIA_STOP -> callOnStop()
-                        KeyEvent.KEYCODE_MEDIA_NEXT -> callOnNext()
-                        else -> false
+    private val mMediaSessionCallback: MediaSessionCompat.Callback =
+        object : MediaSessionCompat.Callback() {
+            override fun onMediaButtonEvent(mediaButtonEvent: Intent): Boolean {
+                val keyEvent =
+                    mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as KeyEvent?
+                if (keyEvent != null) {
+                    if (keyEvent.action == KeyEvent.ACTION_DOWN) { // NO DOUBLE SKIP
+                        val consumed = when (keyEvent.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> callOnPause()
+                            KeyEvent.KEYCODE_MEDIA_PLAY -> callOnPlay()
+                            KeyEvent.KEYCODE_MEDIA_STOP -> callOnStop()
+                            KeyEvent.KEYCODE_MEDIA_NEXT -> callOnNext()
+                            else -> false
+                        }
+                        if (consumed) return true
                     }
-                    if (consumed) return true
                 }
-            }
 
-            return super.onMediaButtonEvent(mediaButtonEvent)
+                return super.onMediaButtonEvent(mediaButtonEvent)
+            }
         }
-    }
 
     // FUCK ANDROID WITH ALL MY HEART
     // SEE https://stackoverflow.com/questions/45960265/android-o-oreo-8-and-higher-media-buttons-issue WHY
@@ -1454,6 +1639,29 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         return set
     }
 
+    private fun Context.updateKeepScreen(status: Boolean? = null): Boolean {
+        val set = if (status != null) {
+            setKey(EPUB_KEEP_SCREEN_ACTIVE, status)
+            status
+        } else {
+            getKey(EPUB_KEEP_SCREEN_ACTIVE, true)!!
+        }
+        if (set) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        )
+        return set
+    }
+
+    private fun Context.updateTwelveHourTime(status: Boolean? = null): Boolean {
+        return if (status != null) {
+            this.setKey(EPUB_TWELVE_HOUR_TIME, status)
+            status
+        } else {
+            this.getKey(EPUB_TWELVE_HOUR_TIME, false)!!
+        }
+    }
+
+
     private fun Context.updateHasTime(status: Boolean? = null): Boolean {
         val set = if (status != null) {
             setKey(EPUB_HAS_TIME, status)
@@ -1466,7 +1674,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
     }
 
     private fun Context.getTextColor(): Int {
-        val color = getKey(EPUB_TEXT_COLOR, getColor(R.color.readerTextColor))!!
+        val color = getKey(EPUB_TEXT_COLOR, ContextCompat.getColor(this, R.color.readerTextColor))!!
         read_text?.setTextColor(color)
         read_battery?.setTextColor(color)
         read_time?.setTextColor(color)
@@ -1507,7 +1715,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
     }
 
     private fun Context.getBackgroundColor(): Int {
-        val color = getKey(EPUB_BG_COLOR, getColor(R.color.readerBackground))!!
+        val color = getKey(EPUB_BG_COLOR, ContextCompat.getColor(this, R.color.readerBackground))!!
         setBackgroundColor(color)
         return color
     }
@@ -1525,23 +1733,29 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
         for ((index, img) in images.withIndex()) {
             if (index == bgColors.size) { // CUSTOM COLOR
-                img.foregroundTintList = colorPrim
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    img.foregroundTintList = colorPrim
+                    img.foreground = ContextCompat.getDrawable(
+                        this,
+                        if (foundCurrentColor) R.drawable.ic_baseline_add_24 else R.drawable.ic_baseline_check_24
+                    )
+                }
                 img.imageAlpha = if (foundCurrentColor) fadedAlpha else fullAlpha
                 img.backgroundTintList =
                     ColorStateList.valueOf(if (foundCurrentColor) Color.parseColor("#161616") else color)
-                img.foreground = ContextCompat.getDrawable(
-                    this,
-                    if (foundCurrentColor) R.drawable.ic_baseline_add_24 else R.drawable.ic_baseline_check_24
-                )
                 continue
             }
 
             if ((color == bgColors[index] && getTextColor() == textColors[index])) {
                 foundCurrentColor = true
-                img.foregroundTintList = colorPrim
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    img.foregroundTintList = colorPrim
+                }
                 img.imageAlpha = fullAlpha
             } else {
-                img.foregroundTintList = colorTrans
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    img.foregroundTintList = colorTrans
+                }
                 img.imageAlpha = fadedAlpha
             }
         }
@@ -1632,7 +1846,9 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         getBackgroundColor()
         getTextColor()
         updateHasTime()
+        updateTwelveHourTime()
         updateHasBattery()
+        updateKeepScreen()
 
         val fonts = getAllFonts()
         if (fonts == null) {
@@ -1666,45 +1882,65 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 setRot(org)
             }
         }
-        val colorPrimary = colorFromAttribute(R.attr.colorPrimary)//   getColor(R.color.colorPrimary)
+        val colorPrimary =
+            colorFromAttribute(R.attr.colorPrimary)//   getColor(R.color.colorPrimary)
 
         read_action_settings.setOnClickListener {
             val bottomSheetDialog = BottomSheetDialog(this)
 
             bottomSheetDialog.setContentView(R.layout.read_bottom_settings)
-            val readSettingsTextSize = bottomSheetDialog.findViewById<SeekBar>(R.id.read_settings_text_size)!!
-            val readSettingsTextPadding = bottomSheetDialog.findViewById<SeekBar>(R.id.read_settings_text_padding)!!
+            val readSettingsTextSize =
+                bottomSheetDialog.findViewById<SeekBar>(R.id.read_settings_text_size)!!
+            val readSettingsTextPadding =
+                bottomSheetDialog.findViewById<SeekBar>(R.id.read_settings_text_padding)!!
             val readSettingsTextPaddingTop =
                 bottomSheetDialog.findViewById<SeekBar>(R.id.read_settings_text_padding_top)!!
 
             val readSettingsScrollVol =
                 bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_scroll_vol)!!
-            val readSettingsLockTts = bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_lock_tts)!!
-            val showTime = bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_show_time)!!
-            val showBattery = bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_show_battery)!!
+            val readSettingsLockTts =
+                bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_lock_tts)!!
+            val showTime =
+                bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_show_time)!!
+            val twelvehourFormat =
+                bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_twelve_hour_time)!!
+            val showBattery =
+                bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_show_battery)!!
+            val keepScreenActive =
+                bottomSheetDialog.findViewById<MaterialCheckBox>(R.id.read_settings_keep_screen_active)!!
             val readSettingsTextPaddingText =
                 bottomSheetDialog.findViewById<TextView>(R.id.read_settings_text_padding_text)!!
             val readSettingsTextPaddingTextTop =
                 bottomSheetDialog.findViewById<TextView>(R.id.read_settings_text_padding_text_top)!!
             val readSettingsTextSizeText =
                 bottomSheetDialog.findViewById<TextView>(R.id.read_settings_text_size_text)!!
-            val readSettingsTextFontText = bottomSheetDialog.findViewById<TextView>(R.id.read_settings_text_font_text)!!
-            val hardResetStream = bottomSheetDialog.findViewById<MaterialButton>(R.id.hard_reset_stream)!!
+            val readSettingsTextFontText =
+                bottomSheetDialog.findViewById<TextView>(R.id.read_settings_text_font_text)!!
+            val hardResetStream =
+                bottomSheetDialog.findViewById<MaterialButton>(R.id.hard_reset_stream)!!
 
             hardResetStream.visibility = if (isFromEpub) View.GONE else View.VISIBLE
             hardResetStream.setOnClickListener {
-                loadChapter(currentChapter, scrollToTop = false, scrollToRemember = true, forceReload = true)
+                ioSafe {
+                    loadChapter(
+                        currentChapter,
+                        scrollToTop = false,
+                        scrollToRemember = true,
+                        forceReload = true
+                    )
+                }
             }
 
             //val root = bottomSheetDialog.findViewById<LinearLayout>(R.id.read_settings_root)!!
-            val horizontalColors = bottomSheetDialog.findViewById<LinearLayout>(R.id.read_settings_colors)!!
+            val horizontalColors =
+                bottomSheetDialog.findViewById<LinearLayout>(R.id.read_settings_colors)!!
 
             val readShowFonts = bottomSheetDialog.findViewById<MaterialButton>(R.id.read_show_fonts)
             readShowFonts?.text = UIHelper.parseFontFileName(getKey(EPUB_FONT))
 
             readShowFonts?.setOnClickListener {
                 showFonts {
-                    readShowFonts?.text = it
+                    readShowFonts.text = it
                 }
             }
 
@@ -1718,6 +1954,12 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 setLockTTS(checked)
             }
 
+
+            twelvehourFormat.isChecked = updateTwelveHourTime()
+            twelvehourFormat.setOnCheckedChangeListener { _, checked ->
+                updateTwelveHourTime(checked)
+            }
+
             showTime.isChecked = updateHasTime()
             showTime.setOnCheckedChangeListener { _, checked ->
                 updateHasTime(checked)
@@ -1728,6 +1970,11 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 updateHasBattery(checked)
             }
 
+            keepScreenActive.isChecked = updateKeepScreen()
+            keepScreenActive.setOnCheckedChangeListener { _, checked ->
+                updateKeepScreen(checked)
+            }
+
             val bgColors = resources.getIntArray(R.array.readerBgColors)
             val textColors = resources.getIntArray(R.array.readerTextColors)
 
@@ -1736,7 +1983,10 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             for ((index, backgroundColor) in bgColors.withIndex()) {
                 val textColor = textColors[index]
 
-                val imageHolder = layoutInflater.inflate(R.layout.color_round_checkmark, null) //color_round_checkmark
+                val imageHolder = layoutInflater.inflate(
+                    R.layout.color_round_checkmark,
+                    null
+                ) //color_round_checkmark
                 val image = imageHolder.findViewById<ImageView>(R.id.image1)
                 image.backgroundTintList = ColorStateList.valueOf(backgroundColor)
                 image.setOnClickListener {
@@ -1751,7 +2001,9 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
             val imageHolder = layoutInflater.inflate(R.layout.color_round_checkmark, null)
             val image = imageHolder.findViewById<ImageView>(R.id.image1)
-            image.foreground = ContextCompat.getDrawable(this, R.drawable.ic_baseline_add_24)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                image.foreground = ContextCompat.getDrawable(this, R.drawable.ic_baseline_add_24)
+            }
             image.setOnClickListener {
                 val builder: AlertDialog.Builder = AlertDialog.Builder(this)
                 builder.setTitle(getString(R.string.reading_color))
@@ -1789,12 +2041,17 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             horizontalColors.addView(imageHolder)
             updateImages()
 
-            readSettingsTextSize.max = 10
+            readSettingsTextSize.max = 20
             val offsetSize = 10
             var updateAllTextOnDismiss = false
             readSettingsTextSize.progress = getTextFontSize() - offsetSize
-            readSettingsTextSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+            readSettingsTextSize.setOnSeekBarChangeListener(object :
+                SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
                     setTextFontSize(progress + offsetSize)
                     stopTTS()
 
@@ -1808,8 +2065,13 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
             readSettingsTextPadding.max = 50
             readSettingsTextPadding.progress = getTextPadding()
-            readSettingsTextPadding.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+            readSettingsTextPadding.setOnSeekBarChangeListener(object :
+                SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
                     setTextPadding(progress)
                     stopTTS()
 
@@ -1823,8 +2085,13 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
 
             readSettingsTextPaddingTop.max = 50
             readSettingsTextPaddingTop.progress = getTextPaddingTop()
-            readSettingsTextPaddingTop.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+            readSettingsTextPaddingTop.setOnSeekBarChangeListener(object :
+                SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
                     setTextPaddingTop(progress)
                     stopTTS()
 
@@ -1840,7 +2107,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 it.popupMenu(items = listOf(Pair(1, R.string.reset_value)), selectedItemId = null) {
                     if (itemId == 1) {
                         it.context?.removeKey(EPUB_TEXT_PADDING_TOP)
-                        readSettingsTextPaddingTop?.progress = getTextPaddingTop()
+                        readSettingsTextPaddingTop.progress = getTextPaddingTop()
                     }
                 }
             }
@@ -1849,7 +2116,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 it.popupMenu(items = listOf(Pair(1, R.string.reset_value)), selectedItemId = null) {
                     if (itemId == 1) {
                         it.context?.removeKey(EPUB_TEXT_PADDING)
-                        readSettingsTextPadding?.progress = getTextPadding()
+                        readSettingsTextPadding.progress = getTextPadding()
                     }
                 }
             }
@@ -1858,7 +2125,7 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 it.popupMenu(items = listOf(Pair(1, R.string.reset_value)), selectedItemId = null) {
                     if (itemId == 1) {
                         it.context?.removeKey(EPUB_TEXT_SIZE)
-                        readSettingsTextSize?.progress = getTextFontSize() - offsetSize
+                        readSettingsTextSize.progress = getTextFontSize() - offsetSize
                     }
                 }
             }
@@ -1937,7 +2204,8 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                             showMessage("This Language is not supported")
                         } else {
-                            tts!!.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            tts!!.setOnUtteranceProgressListener(object :
+                                UtteranceProgressListener() {
                                 //MIGHT BE INTERESTING https://stackoverflow.com/questions/44461533/android-o-new-texttospeech-onrangestart-callback
                                 override fun onDone(utteranceId: String) {
                                     canSpeak = true
@@ -1949,12 +2217,16 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                                 }
 
                                 override fun onStart(utteranceId: String) {
-                                    val highlightResult = Regex("([0-9]*)|([0-9]*):([0-9]*)").matchEntire(utteranceId)
+                                    val highlightResult =
+                                        Regex("([0-9]*)|([0-9]*):([0-9]*)").matchEntire(utteranceId)
                                     if (highlightResult == null || (highlightResult.groupValues.size < 4)) return
                                     try {
-                                        latestTTSSpeakOutId = highlightResult.groupValues[1].toIntOrNull() ?: return
-                                        val startIndex = highlightResult.groupValues[2].toIntOrNull() ?: return
-                                        val endIndex = highlightResult.groupValues[3].toIntOrNull() ?: return
+                                        latestTTSSpeakOutId =
+                                            highlightResult.groupValues[1].toIntOrNull() ?: return
+                                        val startIndex =
+                                            highlightResult.groupValues[2].toIntOrNull() ?: return
+                                        val endIndex =
+                                            highlightResult.groupValues[3].toIntOrNull() ?: return
                                         runOnUiThread {
                                             read_text?.let {
                                                 setHighLightedText(it, startIndex, endIndex)
@@ -2006,14 +2278,16 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
         window.navigationBarColor =
             colorFromAttribute(R.attr.grayBackground) //getColor(R.color.readerHightlightedMetaInfo)
 
-        read_scroll.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            checkTTSRange(scrollY)
-            read_temp_bottom_margin?.visibility = View.GONE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            read_scroll.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                checkTTSRange(scrollY)
+                read_temp_bottom_margin?.visibility = View.GONE
 
-            setKey(EPUB_CURRENT_POSITION_SCROLL, getBookTitle(), scrollY)
+                setKey(EPUB_CURRENT_POSITION_SCROLL, getBookTitle(), scrollY)
 
-            mainScrollY = scrollY
-            updateChapterName(scrollY)
+                mainScrollY = scrollY
+                updateChapterName(scrollY)
+            }
         }
 
         fun toggleShow() {
@@ -2024,9 +2298,13 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
             }
         }
 
-        read_scroll.setOnTouchListener { _, event ->
+        val touchListener = View.OnTouchListener { view, event ->
             val height = getScrollRange()
-
+            if (view != null && view == reader_lin_container && event.action == MotionEvent.ACTION_DOWN) {
+                toggleShow()
+                return@OnTouchListener true
+            }
+            if (event == null) return@OnTouchListener true
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     if (mainScrollY >= height) {
@@ -2051,8 +2329,8 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                     fun deltaShow() {
                         if (scrollYOverflow * 100 / OVERFLOW_NEXT_CHAPTER_DELTA > OVERFLOW_NEXT_CHAPTER_SHOW_PROCENTAGE) {
                             /*read_overflow_progress.visibility = View.VISIBLE
-                            read_overflow_progress.progress =
-                                minOf(scrollYOverflow.toInt(), OVERFLOW_NEXT_CHAPTER_DELTA)*/
+                                    read_overflow_progress.progress =
+                                        minOf(scrollYOverflow.toInt(), OVERFLOW_NEXT_CHAPTER_DELTA)*/
 
                             read_text.translationY = (if (overflowDown) -1f else 1f) * sqrt(
                                 minOf(
@@ -2076,8 +2354,6 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    println("ACTION_UP")
-
                     if (scrollDistance < TOGGLE_DISTANCE) {
                         toggleShow()
                     }
@@ -2096,8 +2372,13 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                     scrollYOverflow = 0f
                 }
             }
-            return@setOnTouchListener false
+            false
         }
+
+        read_scroll?.setOnTouchListener(touchListener)
+        reader_lin_container?.setOnTouchListener(touchListener)
+        read_normal_layout?.setOnTouchListener(touchListener)
+        read_text?.setOnTouchListener(touchListener)
 
 //        read_overlay.setOnClickListener {
 //            selectChapter()
@@ -2119,27 +2400,27 @@ class ReadActivity : AppCompatActivity(), ColorPickerDialogListener {
                 }
             }
 
-            if (!isFromEpub && quickdata.data.size <= 0) {
+            if (!isFromEpub && quickdata.data.isEmpty()) {
                 Toast.makeText(this, R.string.no_chapters_found, Toast.LENGTH_SHORT).show()
                 kill()
                 return@main
             }
 
             maxChapter = getBookSize()
-            loadChapter(
-                minOf(
-                    getKey(EPUB_CURRENT_POSITION, getBookTitle()) ?: 0,
-                    maxChapter - 1
-                ), // CRASH FIX IF YOU SOMEHOW TRY TO LOAD ANOTHER EPUB WITH THE SAME NAME
-                scrollToTop = true,
-                scrollToRemember = true
-            )
-            updateTimeText()
 
             chapterTitles = ArrayList()
             for (i in 0 until maxChapter) {
                 chapterTitles.add(getChapterName(i))
             }
+            loadChapter(
+                //minOf(
+                getKey(EPUB_CURRENT_POSITION, getBookTitle()) ?: 0,
+                //    maxChapter - 1
+                // ), // CRASH FIX IF YOU SOMEHOW TRY TO LOAD ANOTHER EPUB WITH THE SAME NAME
+                scrollToTop = true,
+                scrollToRemember = true
+            )
+            updateTimeText()
 
             fadeInText()
         }
