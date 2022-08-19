@@ -1,4 +1,4 @@
-# QuickNovel
+# QuickNovel fork
 Adfree FOSS Android app for downloading novels. It also functions as an Epub reader.
 
 **Discord:** https://discord.gg/5Hus6fM
